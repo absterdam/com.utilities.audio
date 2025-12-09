@@ -35,14 +35,17 @@ namespace Utilities.Audio
         /// <returns>Byte array PCM data.</returns>
         public static byte[] Encode(float[] samples, PCMFormatSize size = PCMFormatSize.SixteenBit, bool trim = false, float silenceThreshold = 0.001f, int? inputSampleRate = null, int? outputSampleRate = null)
         {
+            NativeArray<byte>? encode = null;
             var native = new NativeArray<float>(samples, Allocator.Persistent);
 
             try
             {
-                return Encode(native, size, trim, silenceThreshold, inputSampleRate, outputSampleRate).ToArray();
+                encode = Encode(native, size, trim, silenceThreshold, inputSampleRate, outputSampleRate, Allocator.Persistent);
+                return encode.Value.ToArray();
             }
             finally
             {
+                encode?.Dispose();
                 native.Dispose();
             }
         }
@@ -61,9 +64,13 @@ namespace Utilities.Audio
         [Preserve]
         public static NativeArray<byte> Encode(NativeArray<float> samples, PCMFormatSize size = PCMFormatSize.SixteenBit, bool trim = false, float silenceThreshold = 0.001f, int? inputSampleRate = null, int? outputSampleRate = null, Allocator allocator = Allocator.Temp)
         {
+            var disposeSamples = false;
+
             if (inputSampleRate.HasValue && outputSampleRate.HasValue)
             {
-                samples = Resample(samples, inputSampleRate.Value, outputSampleRate.Value);
+                var resample = Resample(samples, inputSampleRate.Value, outputSampleRate.Value, Allocator.Persistent);
+                disposeSamples = samples != resample;
+                samples = resample;
             }
             else if (inputSampleRate.HasValue || outputSampleRate.HasValue)
             {
@@ -103,7 +110,17 @@ namespace Utilities.Audio
                 }
             }
 
-            return Encode(samples, start, length, size, allocator);
+            try
+            {
+                return Encode(samples, start, length, size, allocator);
+            }
+            finally
+            {
+                if (disposeSamples)
+                {
+                    samples.Dispose();
+                }
+            }
         }
 
         [Preserve]
@@ -194,13 +211,16 @@ namespace Utilities.Audio
             }
 
             var native = new NativeArray<byte>(pcmData, Allocator.Persistent);
+            NativeArray<float>? decode = null;
 
             try
             {
-                return Decode(native, size, inputSampleRate, outputSampleRate).ToArray();
+                decode = Decode(native, size, inputSampleRate, outputSampleRate, Allocator.Persistent);
+                return decode.Value.ToArray();
             }
             finally
             {
+                decode?.Dispose();
                 native.Dispose();
             }
         }
@@ -220,6 +240,11 @@ namespace Utilities.Audio
             if (pcmData.Length % (int)size != 0)
             {
                 throw new Exception($"{nameof(pcmData)} length must be multiple of the specified {nameof(PCMFormatSize)}!");
+            }
+
+            if (pcmData.Length == 0)
+            {
+                return new NativeArray<float>(0, allocator);
             }
 
             var sampleCount = pcmData.Length / (int)size;
@@ -297,14 +322,17 @@ namespace Utilities.Audio
         {
             if (inputSampleRate == outputSampleRate) { return samples; }
 
+            NativeArray<float>? resample = null;
             var native = new NativeArray<float>(samples, Allocator.Persistent);
 
             try
             {
-                return Resample(native, inputSampleRate, outputSampleRate).ToArray();
+                resample = Resample(native, inputSampleRate, outputSampleRate, Allocator.Persistent);
+                return resample.Value.ToArray();
             }
             finally
             {
+                resample?.Dispose();
                 native.Dispose();
             }
         }
