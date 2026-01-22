@@ -2,6 +2,7 @@
 
 using JetBrains.Annotations;
 using System;
+using System.Collections.Concurrent;
 using System.Threading.Tasks;
 using Unity.Collections;
 using UnityEngine;
@@ -32,11 +33,11 @@ namespace Utilities.Audio
         private CancellationToken destroyCancellationToken => lifetimeCancellationTokenSource.Token;
 #endif // !UNITY_2022_1_OR_NEWER
 
-        private NativeQueue<float> audioQueue;
+        private ConcurrentQueue<float> audioQueue;
 
         private float[] resampleBuffer;
 
-        public bool IsEmpty => audioQueue.Count == 0;
+        public bool IsEmpty => audioQueue.IsEmpty;
 
         private void OnValidate()
         {
@@ -48,7 +49,7 @@ namespace Utilities.Audio
 
         private void Awake()
         {
-            audioQueue = new NativeQueue<float>(Allocator.Persistent);
+            audioQueue = new ConcurrentQueue<float>();
             OnValidate();
 #if PLATFORM_WEBGL && !UNITY_EDITOR
             AudioPlaybackLoop();
@@ -138,6 +139,11 @@ namespace Utilities.Audio
                             data[i + j] = sample;
                         }
                     }
+                    else
+                    {
+                        Array.Clear(data, i, length - i);
+                        break;
+                    }
                 }
             }
             catch (Exception e)
@@ -152,7 +158,6 @@ namespace Utilities.Audio
 #if !UNITY_2022_1_OR_NEWER
             lifetimeCancellationTokenSource.Cancel();
 #endif // !UNITY_2022_1_OR_NEWER
-            audioQueue.Dispose();
         }
 
         public void SampleCallback(float[] samples, int? count = null, int? inputSampleRate = null, int? outputSampleRate = null)
@@ -225,6 +230,10 @@ namespace Utilities.Audio
 
         [UsedImplicitly]
         public void ClearBuffer()
-            => audioQueue.Clear();
+        {
+            while (audioQueue.TryDequeue(out _))
+            {
+            }
+        }
     }
 }
